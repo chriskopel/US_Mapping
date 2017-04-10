@@ -1,0 +1,137 @@
+library(extrafont)
+loadfonts(device = "win")
+library(ggplot2)
+library(maps)
+library(fiftystater)
+library(gtable)
+library(grid)
+library(xlsx)
+
+###Load in Audit Upload Counts Data, merge w/ dfPF(total # entities/st) ## excluding DC
+df <- read.csv("x.csv", stringsAsFactors = FALSE) #2017 Total Uploads
+df16 <- read.csv("y", stringsAsFactors = FALSE) #2016 Total Uploads
+df16Q1 <- read.csv("z.csv", stringsAsFactors = FALSE) #2016 Q1 (static)
+df17Q1 <- read.csv("xx.csv", stringsAsFactors = FALSE) #2017 Q1 (static)
+
+##begin with progress tracker measuring what % we have uploaded using last year's uploads as a proxy
+df <- merge(df16, df17Q1, by="STATE") #merge dfPF
+df$PercUpl <- round((df$TOTAL_UPLD_17Q1/df$TOTAL_UPLD_2016)*100, digits = 2)
+df$STATE <- state.name[match(df$STATE, state.abb)] #lowercase state names for mapping 
+df[] <- lapply(df, tolower)
+df$PercUpl <- as.numeric(df$PercUpl)
+
+#2016-17 Comparables
+dfComp <- merge(df16Q1, df17Q1, by="STATE")
+dfComp$PercUpl <- round((dfComp$TOTAL_UPLD_17Q1/dfComp$TOTAL_UPLD_16Q1)*100, digits = 2) 
+dfComp$Diff <- (dfComp$TOTAL_UPLD_17Q1-dfComp$TOTAL_UPLD_16Q1)
+dfComp$PercChng <- round((dfComp$Diff/dfComp$TOTAL_UPLD_16Q1)*100, digits = 2)
+dfComp <- merge(dfComp, dfPF, by="STATE")
+
+### fiftystater map:
+
+###p = 2017 Map
+# map_id creates the aesthetic mapping to the state name column in your data
+p <- ggplot(df, aes(map_id = STATE)) + 
+  # map points to the fifty_states shape data
+  geom_map(aes(fill = PercUpl), map = fifty_states) + 
+  expand_limits(x = fifty_states$long, y = fifty_states$lat) +
+  coord_map() +
+  scale_x_continuous(breaks = NULL) + 
+  scale_y_continuous(breaks = NULL) +
+  #labs(x = "", y = "", title = "% of Total Audits Uploaded by State - Q1 2017") + 
+  labs(x="",y="") +
+  scale_fill_continuous(low = "steelblue2", high = "dodgerblue4", 
+                        name = "% of Total") +
+  theme(legend.position = "bottom", 
+        panel.background = element_blank(),
+        legend.title = element_text(face = "bold"),
+        legend.text = element_text(face = "bold"),
+        plot.margin = unit(c(45, 20, 20, 20), "pt"), #top, right, bottom, left
+        plot.title = element_text(hjust = 0.5)) 
+  
+p
+##annotations: http://drawar.github.io/posts/add-borders-annotate-outside-ggplot/ 
+g1 <- ggplot_gtable(ggplot_build(p))
+##grab dimensions of plot first (g1)
+# grey filling with no border line 
+rect = rectGrob(gp = gpar(col = NA, fill = "grey90"))
+
+# add to the left and right
+for(i in c(1,7)) g1 = gtable_add_grob(g1, rect, t = 1, b = 12, l=i)
+
+# add to the top and bottom
+for(i in c(1,12)) g1 = gtable_add_grob(g1, rect, t = i, l = 1, r=7)
+
+##begin adding captions, bottom left (change text to greyed out)
+###change font, make it look more official
+left.foot = textGrob("Chris Kopel - Sr. Data Researcher", 
+                     x = 0, y = 0.8, just = c("left", "top"), 
+                     gp = gpar(fontsize = 11, col =  "black", 
+                               windowsFonts(Times=windowsFont("TT Times New Roman"))))
+labs.foot = gTree("LabsFoot", children = gList(left.foot))
+
+g1 <- gtable_add_grob(g1, labs.foot, t=12, l=2,r=5)
+
+grid.draw(g1)
+
+#add title
+left.title = textGrob("Percent of Total Audits Uploaded by State", x = 0, y = 0.9, just = c("left", "top"), 
+                      gp = gpar(fontsize = 18, col =  "black", 
+                                windowsFonts(Times=windowsFont("TT Times New Roman"))))
+labs.title = gTree("LabsTitle", children = gList(left1))
+#add subtitle
+left.sub = textGrob("2017 Q1 - USPF FDM", x = 0, y = 0.9, just = c("left", "top"), 
+                    gp = gpar(fontsize = 14, col =  "black", 
+                              windowsFonts(Times=windowsFont("TT Times New Roman"))))
+labs.sub = gTree("LabsSub", children = gList(left.sub))
+
+#combine grobs
+left.head = matrix(list(left.title, left.sub), nrow = 2)
+head = gtable_matrix(name = "Heading", grobs = left.head, 
+                     widths = unit(1, "null"), 
+                     heights = unit.c(unit(1.1, "grobheight", left.title) + 
+                                        unit(0.5, "lines"), unit(1.1,  "grobheight", left.sub) + 
+                                        unit(0.5, "lines")))
+
+#add title to graph
+g1 <- gtable_add_grob(g1, head, t=1, l=2, r=4)
+
+
+grid.draw(g1)
+
+#export table to excel:
+write.xlsx(df, "yy.xlsx")
+
+#remove all objects related to graph:
+rm(g1, head, i, labs.foot, labs.sub, left.foot, left.sub, left.title, p, rect, right.foot, left.head)
+
+# OPTIONAL: add border boxes to AK/HI
+p + fifty_states_inset_boxes()
+
+# Map a second variable to each state's fill color with colorplaner (THIS COULD WORK FOR TOTAL NEEDING ENTERED)
+#library(colorplaner)
+#p + aes(fill2 = UrbanPop) + scale_fill_colorplane() +
+#  theme(legend.position = "right")
+#adding labels: http://stackoverflow.com/questions/28962453/how-can-i-add-labels-to-a-choropleth-map-created-using-ggplot2
+#also labels:http://stackoverflow.com/questions/22038640/labeling-center-of-map-polygons-in-r-ggplot
+
+
+######################################
+
+###begin 2nd map (maps package) (doesn't look as good)
+#pull in map data (https://gist.github.com/cdesante/4252133)
+all_states <- map_data("state")
+all_states <- all_states[all_states$region!="district of columbia",] #remove dc
+df$region <- df$STATE #create a new column w/ same name for merge
+Total <- merge(all_states, df, by="region") #merge by region
+
+#begin map plot
+p <- ggplot()
+p <- p + geom_polygon(data=Total, aes(x=long, y=lat, group = group, fill=Total$PercUpl),
+                      colour="white") + 
+  scale_fill_continuous(low = "thistle2", high = "darkred", guide="colorbar")
+P1 <- p + theme_bw()  + 
+  labs(fill = "More = Darker \n Less = Lighter",
+       title = "Total Audits Uploaded by State \n 2017", x="", y="")
+P1 + scale_y_continuous(breaks=c()) + scale_x_continuous(breaks=c()) + 
+  theme(panel.border =  element_blank())
