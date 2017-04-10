@@ -1,0 +1,108 @@
+library(extrafont)
+loadfonts(device = "win")
+library(ggplot2)
+library(maps)
+library(fiftystater)
+library(gtable)
+library(grid)
+library(xlsx)
+
+###Load in Audit Upload Counts Data, merge w/ dfPF(total # entities/st) ## excluding DC
+df <- read.csv("x.csv", stringsAsFactors = FALSE) #2017 Total Uploads
+df16 <- read.csv("y.csv", stringsAsFactors = FALSE) #2016 Total Uploads (static)
+df16Q1 <- read.csv("z.csv", stringsAsFactors = FALSE) #2016 Q1 (static)
+df17Q1 <- read.csv("xx.csv", stringsAsFactors = FALSE) #2017 Q1 (static)
+
+##begin 2016-17 Comp map: merge dfs, create stats, prepare for next merge, reassign numeric values
+df <- merge(df16, df16Q1, by="STATE") #merge dfPF
+df <- merge(df, df17Q1, by="STATE")
+df$PercUpl16 <- round((df$TOTAL_UPLD_16Q1/df$TOTAL_UPLD_2016)*100, digits = 2)
+df$PercUpl17 <- round((df$TOTAL_UPLD_17Q1/df$TOTAL_UPLD_2016)*100, digits = 2)
+df$PercUplDiff <- df$PercUpl17-df$PercUpl16
+df$UplDiff <- df$TOTAL_UPLD_17Q1-df$TOTAL_UPLD_16Q1
+df$STATE <- state.name[match(df$STATE, state.abb)] #lowercase state names for mapping 
+df[] <- lapply(df, tolower)
+df$PercUplDiff <- as.numeric(df$PercUplDiff)
+df$UplDiff <- as.numeric(df$UplDiff)
+
+write.csv(df, file = "Q1CompR.csv", row.names = FALSE) #write to a csv so the above ^ can be skipped next time you pull up map
+###BEGIN HERE
+df <- read.csv("zz.csv", stringsAsFactors = FALSE) #prepared CSV with correct data types
+
+###p = 2016 Map: fiftystater package (two dimensional)
+# map_id creates the aesthetic mapping to the state name column in your data
+p <- ggplot(df, aes(map_id = STATE)) + 
+  # map points to the fifty_states shape data
+  geom_map(aes(fill = PercUplDiff), map = fifty_states) + 
+  expand_limits(x = fifty_states$long, y = fifty_states$lat) +
+  coord_map() +
+  scale_x_continuous(breaks = NULL) + 
+  scale_y_continuous(breaks = NULL) +
+  #labs(x = "", y = "", title = "% of Total Audits Uploaded by State - Q1 2017") + 
+  labs(x="",y="") +
+  # scale_fill_continuous(low = "red4", high = "dodgerblue4", 
+  #                       name = "% of Total") +
+  scale_fill_gradient2(midpoint = 0, low = "red4", mid = "lightblue4", high = "dodgerblue4", 
+                       guide_legend(title = "Percent Difference:\nBlue = Higher % in 2017\nRed = Higher % in 2016")) +
+  theme(legend.position = "bottom", 
+        panel.background = element_blank(),
+        legend.title = element_text(face = "bold"),
+        legend.text = element_text(face = "bold"),
+        plot.margin = unit(c(45, 20, 40, 20), "pt"), #top, right, bottom, left
+        plot.title = element_text(hjust = 0.5)) 
+
+p 
+##annotations: http://drawar.github.io/posts/add-borders-annotate-outside-ggplot/ 
+g1 <- ggplot_gtable(ggplot_build(p))
+##grab dimensions of plot first (g1)
+# grey filling with no border line 
+rect = rectGrob(gp = gpar(col = NA, fill = "grey90"))
+
+# add to the left and right
+for(i in c(1,7)) g1 = gtable_add_grob(g1, rect, t = 1, b = 12, l=i)
+
+# add to the top and bottom
+for(i in c(1,12)) g1 = gtable_add_grob(g1, rect, t = i, l = 1, r=7)
+
+##begin adding captions, bottom left (change text to greyed out)
+###change font, make it look more official
+left.foot = textGrob("Chris Kopel\nSr. Data Researcher - USPF FDM", 
+                     x = 0, y = 0.8, just = c("left", "top"), 
+                     gp = gpar(fontsize = 11, col =  "black", 
+                               windowsFonts(Times=windowsFont("TT Times New Roman"))))
+labs.foot = gTree("LabsFoot", children = gList(left.foot))
+
+g1 <- gtable_add_grob(g1, labs.foot, t=12, l=2,r=5)
+
+grid.draw(g1)
+
+#add title
+left.title = textGrob("Percent Difference of Total Audits Uploaded by State", x = 0, y = 0.9, just = c("left", "top"), 
+                      gp = gpar(fontsize = 18, col =  "black", 
+                                windowsFonts(Times=windowsFont("TT Times New Roman"))))
+labs.title = gTree("LabsTitle", children = gList(left1))
+#add subtitle
+left.sub = textGrob("2017 Q1 vs. 2016 Q1", x = 0, y = 0.9, just = c("left", "top"), 
+                    gp = gpar(fontsize = 14, col =  "black", 
+                              windowsFonts(Times=windowsFont("TT Times New Roman"))))
+labs.sub = gTree("LabsSub", children = gList(left.sub))
+
+#combine grobs
+left.head = matrix(list(left.title, left.sub), nrow = 2)
+head = gtable_matrix(name = "Heading", grobs = left.head, 
+                     widths = unit(1, "null"), 
+                     heights = unit.c(unit(1.1, "grobheight", left.title) + 
+                                        unit(0.5, "lines"), unit(1.1,  "grobheight", left.sub) + 
+                                        unit(0.5, "lines")))
+
+#add title to graph
+g1 <- gtable_add_grob(g1, head, t=1, l=2, r=4)
+
+
+grid.draw(g1)
+
+#export table to excel:
+write.xlsx(df, "C:/Users/chris_kopel/Documents/S&P/Quarterly Reports/PercTotUpl16Q1.xlsx")
+
+#remove all objects related to graph:
+rm(g1, head, i, labs.foot, labs.sub, left.foot, left.sub, left.title, p, rect, right.foot, left.head)
