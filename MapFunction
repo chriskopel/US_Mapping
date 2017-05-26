@@ -1,0 +1,110 @@
+library(extrafont)
+loadfonts(device = "win")
+library(ggplot2)
+library(maps)
+library(fiftystater)
+library(gtable)
+library(grid)
+library(xlsx)
+library(scales)
+
+##setting Today as a variable and pasting it into title
+today <- format(Sys.Date(), "%b %d %Y")
+
+dfToDate <- read.csv("xx.csv", stringsAsFactors = FALSE) #2017 ToDate (dynamic)
+df16 <- read.csv("yy.csv", stringsAsFactors = FALSE) #2016 Total Uploads (static)
+
+mergeDF <- function(df1, df2){
+  dfNew <<- merge(df1, df2, by="STATE") #merge dfPF
+  dfNew$PercUpl <- round((dfNew$TOTAL_UPLD_2017/dfNew$TOTAL_UPLD_2016)*100, digits = 2)
+  dfNew$STATE <- state.name[match(dfNew$STATE, state.abb)] #lowercase state names for mapping 
+  dfNew[] <- lapply(dfNew, tolower)
+  dfNew$TOTAL_UPLD_2017 <- as.numeric(dfNew$TOTAL_UPLD_2017)
+  dfNew$TOTAL_UPLD_2016 <- as.numeric(dfNew$TOTAL_UPLD_2016)
+  dfNew$PercUpl <- as.numeric(dfNew$PercUpl) 
+  dfNew <<- dfNew
+}
+
+#mergeDFs and then set variables for total values so far  
+mergeDF(df16, dfToDate)
+tot17 <- sum(dfNew$TOTAL_UPLD_2017)
+tot16 <- sum(dfNew$TOTAL_UPLD_2016)
+PercTot <- percent(round((tot17/tot16), digits = 3))
+
+###p = 2017 Map
+# map_id creates the aesthetic mapping to the state name column in your data
+USmapProgress <- function(dfX, mapIDSt, fillPercUpl)#dfX = dfNew mapID should be STATE, fill should be PercUpl
+{
+
+
+p <- ggplot(dfX, aes(map_id = mapIDSt)) + 
+  # map points to the fifty_states shape data
+  geom_map(aes(fill = fillPercUpl), map = fifty_states) + 
+  expand_limits(x = fifty_states$long, y = fifty_states$lat) +
+  coord_map() +
+  scale_x_continuous(breaks = NULL) + 
+  scale_y_continuous(breaks = NULL) +
+  #labs(x = "", y = "", title = "% of Total Audits Uploaded by State - Q1 2017") + 
+  labs(x="",y="") +
+  scale_fill_continuous(low = "grey55", high = "dodgerblue4", 
+                        name = "% of Total") +
+  theme(legend.position = "bottom", 
+        panel.background = element_blank(),
+        legend.title = element_text(face = "bold"),
+        legend.text = element_text(face = "bold"),
+        plot.margin = unit(c(45, 20, 40, 20), "pt"), #top, right, bottom, left
+        plot.title = element_text(hjust = 0.5)) 
+
+p <<- p
+
+g1 <- ggplot_gtable(ggplot_build(p))
+##grab dimensions of plot first (g1)
+rect = rectGrob(gp = gpar(col = NA, fill = "grey90"))
+
+# add to the left and right
+for(i in c(1,7)) g1 = gtable_add_grob(g1, rect, t = 1, b = 12, l=i)
+
+# add to the top and bottom
+for(i in c(1,12)) g1 = gtable_add_grob(g1, rect, t = i, l = 1, r=7)
+
+##begin adding captions, bottom left (change text to greyed out)
+###change font, make it look more official
+left.foot = textGrob("Chris Kopel\nSr. Data Researcher - USPF FDM", 
+                     x = 0, y = 0.8, just = c("left", "top"), 
+                     gp = gpar(fontsize = 11, col =  "black", 
+                               windowsFonts(Times=windowsFont("TT Times New Roman"))))
+labs.foot = gTree("LabsFoot", children = gList(left.foot))
+
+g1 <- gtable_add_grob(g1, labs.foot, t=12, l=2,r=5)
+
+grid.draw(g1)
+
+
+#add title
+left.title = textGrob("Percent of Total Audits Uploaded by State", x = 0, y = 0.9, just = c("left", "top"), 
+                      gp = gpar(fontsize = 18, col =  "black", 
+                                windowsFonts(Times=windowsFont("TT Times New Roman"))))
+#labs.title = gTree("LabsTitle", children = gList(left1))
+#add subtitle 
+left.sub = textGrob(paste("Jan 1 2017 -", today, "(", PercTot, "of 2016 Total)"), x = 0, y = 0.9, just = c("left", "top"), 
+                    gp = gpar(fontsize = 14, col =  "black", 
+                              windowsFonts(Times=windowsFont("TT Times New Roman"))))
+labs.sub = gTree("LabsSub", children = gList(left.sub))
+
+#combine grobs
+left.head = matrix(list(left.title, left.sub), nrow = 2)
+head = gtable_matrix(name = "Heading", grobs = left.head, 
+                     widths = unit(1, "null"), 
+                     heights = unit.c(unit(1.1, "grobheight", left.title) + 
+                                        unit(0.5, "lines"), unit(1.1,  "grobheight", left.sub) + 
+                                        unit(0.5, "lines")))
+
+#add title to graph
+g1 <- gtable_add_grob(g1, head, t=1, l=2, r=4)
+
+
+grid.draw(g1)
+
+}
+
+USmapProgress(dfNew, dfNew$STATE, dfNew$PercUpl)
